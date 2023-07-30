@@ -52,6 +52,7 @@ Shader "AudioLink/Internal/AudioLinkSpectrumUI"
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -59,6 +60,7 @@ Shader "AudioLink/Internal/AudioLinkSpectrumUI"
                 float2 uv : TEXCOORD0;
                 UNITY_FOG_COORDS(1)
                 float4 vertex : SV_POSITION;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             uniform float _X0;
@@ -91,6 +93,8 @@ Shader "AudioLink/Internal/AudioLinkSpectrumUI"
             v2f vert(appdata v)
             {
                 v2f o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.uv = v.uv;
                 UNITY_TRANSFER_FOG(o,o.vertex);
