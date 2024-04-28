@@ -34,7 +34,6 @@ namespace AudioLink {
             UnityEditor.EditorApplication.update += MyUpdate;
         }
 
-
         public void OnEnable() {
             if (!audioMaterialParser) {
                 audioMaterialParser = GameObject.FindObjectOfType<CVRAudioMaterialParser>();
@@ -129,7 +128,7 @@ namespace AudioLink {
             ApplySavedState();
         }
 
-        void ApplySavedState() {
+        static void ApplySavedState() {
             // Find the audioSources
             if (!audioMaterialParser) return;
             audioSource = audioMaterialParser.GetComponentInChildren<AudioSource>();
@@ -153,7 +152,7 @@ namespace AudioLink {
             }
         }
 
-        void StartMicrophone() {
+        static void StartMicrophone() {
             try {
                 audioSource.clip = Microphone.Start(microphoneName, true, 1, 44100);
             } catch (ArgumentException err) {
@@ -173,6 +172,10 @@ namespace AudioLink {
             CustomRenderTexture customRenderTexture = audioMaterialParser.GetComponent<CVRCustomRenderTextureUpdater>().customRenderTexture;
             // customRenderTexture.Update();
             Shader.SetGlobalTexture("_AudioTexture", customRenderTexture, RenderTextureSubElement.Default);
+
+            // https://forum.unity.com/threads/recording-audio-with-microphone-in-editor-mode-not-playing.1044007/
+            UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
+            // UnityEditor.SceneView.RepaintAll();
         }
 
         static void SetMaterialPropertiesFromSliders() {
@@ -256,12 +259,13 @@ namespace AudioLink {
 
 
         // Based on https://answers.unity.com/questions/844896/how-to-play-audioclip-from-editor-from-a-start-sam.html
+        // Upgraded with https://forum.unity.com/threads/audio-in-editor-mode.902921/
 
         public static void PlayClip(AudioClip clip , int startSample , bool loop) {
             Assembly unityEditorAssembly = typeof(AudioImporter).Assembly;
             Type audioUtilClass = unityEditorAssembly.GetType("UnityEditor.AudioUtil");
             MethodInfo method = audioUtilClass.GetMethod(
-                "PlayClip",
+                "PlayPreviewClip",
                 BindingFlags.Static | BindingFlags.Public,
                 null,
                 new System.Type[] {
@@ -285,7 +289,7 @@ namespace AudioLink {
             Assembly unityEditorAssembly = typeof(AudioImporter).Assembly;
             Type audioUtilClass = unityEditorAssembly.GetType("UnityEditor.AudioUtil");
             MethodInfo method = audioUtilClass.GetMethod(
-                "StopAllClips",
+                "StopAllPreviewClips",
                 BindingFlags.Static | BindingFlags.Public
                 );
 
