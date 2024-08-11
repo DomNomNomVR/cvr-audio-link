@@ -34,6 +34,7 @@ namespace AudioLink {
             UnityEditor.EditorApplication.update += MyUpdate;
         }
 
+
         public void OnEnable() {
             if (!audioMaterialParser) {
                 audioMaterialParser = GameObject.FindObjectOfType<CVRAudioMaterialParser>();
@@ -79,7 +80,8 @@ namespace AudioLink {
                 audioMaterialParser = GameObject.FindObjectOfType<CVRAudioMaterialParser>();
             }
             if (!audioMaterialParser) {
-                StopAllClips();
+                if (audioSource != null) audioSource.Stop();
+                TryStopMic();
                 if (GUI.Button(R(40), "Add AudioLink to scene")) {
                     PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(
                         "Assets/AudioLink/AudioLinkController.prefab"
@@ -93,6 +95,7 @@ namespace AudioLink {
                 EditorGUI.LabelField(R(20), "Input Type:");
                 void handleInputTypeDropdownItemClicked(object parameter) {
                     inputType = (InputType)parameter;
+                    TryStopMic();
                     StartMicrophone();
                 }
                 GenericMenu menu = new GenericMenu();
@@ -109,8 +112,12 @@ namespace AudioLink {
                 // Microphone
                 EditorGUI.LabelField(R(20), "Microphone device:");
                 void handleDropdownItemClicked(object parameter) {
-                    microphoneName = parameter as string;
-                    StartMicrophone();
+                    string new_mic_name = parameter as string;
+                    if (new_mic_name != microphoneName) {
+                        TryStopMic();
+                        microphoneName = new_mic_name;
+                        StartMicrophone();
+                    }
                 }
                 GenericMenu menu = new GenericMenu();
                 foreach (var device in Microphone.devices) {
@@ -128,35 +135,57 @@ namespace AudioLink {
             ApplySavedState();
         }
 
-        static void ApplySavedState() {
+        void TryStopMic() {
+            try {
+                Microphone.End(microphoneName);
+            } catch (ArgumentException err) {
+                if (microphoneName != "") throw err;
+            }
+        }
+
+        void ApplySavedState() {
             // Find the audioSources
             if (!audioMaterialParser) return;
+
+
+            // based on https://forum.unity.com/threads/how-to-preview-audiosource-not-in-play-mode.1146377/
             audioSource = audioMaterialParser.GetComponentInChildren<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.gameObject.SetActive(true);
+            audioSource.enabled = true;
+            audioSource.gameObject.hideFlags |= HideFlags.DontSave;
+            // audioSource.gameObject.hideFlags &= ~HideFlags.DontSave;
+
 
             if (inputType == InputType.Microphone) {
-                StopAllClips();
+                audioSource.Stop();
                 StartMicrophone();
             } else if (inputType == InputType.SoundFile) {
                 if (audioSource.clip != audioClip) {
+                    audioSource.Stop();
                     audioSource.clip = audioClip;
-                    StopAllClips();
                 }
                 if (!audioSource.isPlaying) {
                     audioSource.Play();
                 }
-                if (audioClipMuted) {
-                    StopAllClips();
-                } else if (audioClip && !IsClipPlaying(audioClip)) {
-                    PlayClip(audioClip, audioSource.timeSamples, true);
-                }
+                // PlayClip(audioClip, audioSource.timeSamples, true);
             }
+
+            audioSource.outputAudioMixerGroup = (audioClipMuted || inputType == InputType.Microphone)?
+                AssetDatabase.LoadAssetAtPath<AudioMixerGroup>("Assets/AudioLink/EditorScript/SilentAudioMixer.mixer")
+                : null;
         }
 
-        static void StartMicrophone() {
-            try {
+        void StartMicrophone() {
+            if (audioSource.clip != null && (audioSource.clip.name != "Microphone")) {
+                audioSource.Stop();
+                audioSource.clip = null;
+            }
+            if (!Microphone.IsRecording(microphoneName) || audioSource.clip == null) {
+                audioSource.Stop();
+                Microphone.End(microphoneName);
                 audioSource.clip = Microphone.Start(microphoneName, true, 1, 44100);
-            } catch (ArgumentException err) {
-                if (microphoneName != "") throw err;
+                audioSource.Play();
             }
             if (!audioSource.isPlaying) {
                 audioSource.Play();
@@ -173,9 +202,9 @@ namespace AudioLink {
             // customRenderTexture.Update();
             Shader.SetGlobalTexture("_AudioTexture", customRenderTexture, RenderTextureSubElement.Default);
 
-            // https://forum.unity.com/threads/recording-audio-with-microphone-in-editor-mode-not-playing.1044007/
-            UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
-            // UnityEditor.SceneView.RepaintAll();
+            // ensure that the scene gets updated.
+            EditorUtility.SetDirty(audioMaterialParser.gameObject);
+            SceneView.RepaintAll();
         }
 
         static void SetMaterialPropertiesFromSliders() {
@@ -254,68 +283,6 @@ namespace AudioLink {
 
 
 
-
-
-
-
-        // Based on https://answers.unity.com/questions/844896/how-to-play-audioclip-from-editor-from-a-start-sam.html
-        // Upgraded with https://forum.unity.com/threads/audio-in-editor-mode.902921/
-
-        public static void PlayClip(AudioClip clip , int startSample , bool loop) {
-            Assembly unityEditorAssembly = typeof(AudioImporter).Assembly;
-            Type audioUtilClass = unityEditorAssembly.GetType("UnityEditor.AudioUtil");
-            MethodInfo method = audioUtilClass.GetMethod(
-                "PlayPreviewClip",
-                BindingFlags.Static | BindingFlags.Public,
-                null,
-                new System.Type[] {
-                typeof(AudioClip),
-                typeof(Int32),
-                typeof(Boolean)
-            },
-            null
-            );
-            method.Invoke(
-                null,
-                new object[] {
-                clip,
-                startSample,
-                loop
-            }
-            );
-        }
-
-        public static void StopAllClips () {
-            Assembly unityEditorAssembly = typeof(AudioImporter).Assembly;
-            Type audioUtilClass = unityEditorAssembly.GetType("UnityEditor.AudioUtil");
-            MethodInfo method = audioUtilClass.GetMethod(
-                "StopAllPreviewClips",
-                BindingFlags.Static | BindingFlags.Public
-                );
-
-            method.Invoke(
-                null,
-                null
-                );
-        }
-
-        public static bool IsClipPlaying(AudioClip clip) {
-            Assembly unityEditorAssembly = typeof(AudioImporter).Assembly;
-            Type audioUtilClass = unityEditorAssembly.GetType("UnityEditor.AudioUtil");
-            MethodInfo method = audioUtilClass.GetMethod(
-                "IsClipPlaying",
-                BindingFlags.Static | BindingFlags.Public
-                );
-
-            bool playing = (bool)method.Invoke(
-                null,
-                new object[] {
-                clip,
-            }
-            );
-
-            return playing;
-        }
     }
 }
 
